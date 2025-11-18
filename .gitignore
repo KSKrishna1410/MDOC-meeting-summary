@@ -1,0 +1,6 @@
+venv/
+venv_*/
+*.pyc
+ffmpeg-*
+.env
+.DS_Store
