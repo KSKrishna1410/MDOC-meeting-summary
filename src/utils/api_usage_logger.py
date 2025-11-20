@@ -11,8 +11,38 @@ AGGREGATE_FILE = "token_aggregate.json"
 usage_logger = setup_usage_logger()
 
 
+def _resolve_session_id(explicit_session_id: Optional[str] = None) -> str:
+    """
+    Determine the session identifier for usage logging without assuming a Streamlit context.
+    """
+    if explicit_session_id:
+        return explicit_session_id
 
-def log_openai_usage(module_name: str, model: str, prompt_tokens: int, completion_tokens: int, function_name: str = ""):
+    # Try Streamlit session state if available
+    try:
+        session_state = getattr(st, "session_state", None)
+        if session_state is not None:
+            # Prefer dict-like access to avoid AttributeError when key is absent
+            if isinstance(session_state, dict):
+                session_id = session_state.get("session_guid")
+            else:
+                session_id = session_state.get("session_guid") if hasattr(session_state, "get") else None
+                if session_id is None and hasattr(session_state, "session_guid"):
+                    session_id = session_state.session_guid
+            if session_id:
+                return str(session_id)
+    except Exception:
+        pass
+
+    # Fall back to environment variable or default placeholder
+    env_session = os.getenv("SESSION_GUID")
+    if env_session:
+        return env_session
+
+    return "unknown-session"
+
+
+def log_openai_usage(module_name: str, model: str, prompt_tokens: int, completion_tokens: int, function_name: str = "", session_id: Optional[str] = None):
     """
     Log OpenAI API usage using the existing logger configuration.
     
@@ -27,7 +57,7 @@ def log_openai_usage(module_name: str, model: str, prompt_tokens: int, completio
     entry = {
         "timestamp": datetime.utcnow().isoformat(),
         "service": "openai",
-        "session_id": st.session_state.session_guid,
+        "session_id": _resolve_session_id(session_id),
         "module": module_name,
         "function": function_name,
         "model": model,

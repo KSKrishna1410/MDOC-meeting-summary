@@ -537,7 +537,8 @@ def generate_document(
             include_screenshots=include_screenshots,
             meeting_participants=meeting_participants or [],
             meeting_highlights=meeting_highlights or [],
-            meeting_duration_minutes= video_duration
+            meeting_duration_minutes= video_duration,
+            session_guid=session_guid
         )
         
         # Generate documents based on format selection

@@ -1269,7 +1269,8 @@ class DocumentGenerator:
                  generate_missing_questions: bool = False, generate_process_map: bool = False,
                  include_screenshots: bool = False, meeting_participants: Optional[List[str]] = None,
                  meeting_highlights: Optional[List[str]] = None,
-                 meeting_duration_minutes: Optional[float] = None):
+                 meeting_duration_minutes: Optional[float] = None,
+                 session_guid: Optional[str] = None):
         """
         Initialize the document generator
         
@@ -1296,6 +1297,7 @@ class DocumentGenerator:
         self.meeting_participants = meeting_participants or []
         self.meeting_highlights = meeting_highlights or []
         self.meeting_duration_minutes = meeting_duration_minutes or 0
+        self.session_guid = session_guid
         
         # The screenshots should already be deduplicated in app.py
         # Just make sure they're sorted by timestamp
@@ -1745,7 +1747,8 @@ class DocumentGenerator:
                     model=get_chat_model_name(),
                     prompt_tokens=usage.prompt_tokens,
                     completion_tokens=usage.completion_tokens,
-                    function_name="_get_ai_enhanced_reason"
+                    function_name="_get_ai_enhanced_reason",
+                    session_id=self.session_guid
                 )
             enhanced_reason = response.choices[0].message.content.strip()
             
@@ -1874,7 +1877,8 @@ class DocumentGenerator:
                     model=get_chat_model_name(),
                     prompt_tokens=usage.prompt_tokens,
                     completion_tokens=usage.completion_tokens,
-                    function_name="_generate_missing_questions"
+                    function_name="_generate_missing_questions",
+                    session_id=self.session_guid
                 )
             
             return response.choices[0].message.content
@@ -1941,7 +1945,8 @@ class DocumentGenerator:
                     model=get_chat_model_name(),
                     prompt_tokens=usage.prompt_tokens,
                     completion_tokens=usage.completion_tokens,
-                    function_name="_generate_process_map"
+                    function_name="_generate_process_map",
+                    session_id=self.session_guid
                 )
             return response.choices[0].message.content
         except Exception as e:
@@ -2170,7 +2175,8 @@ class DocumentGenerator:
                         model=self.model or "",
                         prompt_tokens=usage.prompt_tokens,
                         completion_tokens=usage.completion_tokens,
-                        function_name="_generate_narrative_documentation"
+                        function_name="_generate_narrative_documentation",
+                        session_id=self.session_guid
                     )
 
                 logging.info(f"API call successful for narrative document generation")
