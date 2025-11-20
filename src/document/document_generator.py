@@ -2101,7 +2101,7 @@ class DocumentGenerator:
         screenshot_context += "- Skip screenshots that don't fit naturally into any section"
         
         # Prepare analysis prompt based on document type
-        if self.document_type == "general_documentation":
+        if self.document_type == "kt_document":
             # Meeting Summary with metadata
             metadata_info = ""
             if self.meeting_participants:
@@ -2115,36 +2115,40 @@ class DocumentGenerator:
                 metadata_info += f"\nMeeting Duration: {duration}"
             
             prompt = f"""
-            I need you to analyze the transcript from a video and generate a comprehensive general documentation document.
+            I need you to analyze the transcript from a product demo video and generate a structured knowledge transfer document.
+            The video may be a product demo, a discussion about a tool's functionality, or an internal stakeholder meeting about processes or implementations within an organization. Your goal is to capture all critical information, including technical details, workflows, procedures, and discussions, and structure it into a document with clear, step-by-step instructions and explanations. Include screenshots from the video at relevant timestamps to enhance understanding.
+            Donot miss any information from the transcript.
 
             TRANSCRIPT:
             {full_transcript}
             {screenshot_context}
 
-            This is a GENERAL DOCUMENTATION document that should:
-            1. Include the entire speech content, refined and organized but preserving all important information
-            2. Structure the content in a logical flow that follows the narrative of the video
-            3. Maintain the chronological order of information while organizing it into related sections
-            4. Identify timestamps throughout the document where screenshots would enhance understanding
-            5. Focus on creating a complete documentation that captures the full content with visual aids
-            6. Donot omit any important information. If there are key decisions taken or promises made, include it in the document.
+            This is a KNOWLEDGE TRANSFER document that should:
+            1. Extract and highlight all technical features, workflows, procedures and processed
+            2. Refence_Document-Focused Structure: Organize the content to be clear and usable as a template or user manual, with step-by-step instructions for processes and clear explanations of functionalities or concepts so that this document can be used as a guide and a manual for anyone referencing it.
+            3. Include explanations of product/process functionality that would help someone understand the process/product
+            4. Identify timestamps where important features or processes are shown (for screenshot placement)
+            5. Focus on creating documentation that could be used as a manual or reference document
+            6. Flexibility for Video Type: Adapt the structure to suit product demos, tool functionality discussions, or internal process discussions. For example:
+            - For product demos, emphasize features, UI navigation, and use cases.
+            - For process discussions, focus on workflows, roles, and implementation steps.
+            - For stakeholder meetings, capture decisions, rationales, and action items.
             7. Donot generate additional own content. Everything has to be based on the transcript.
-
 
             Format your response as a JSON object with the following structure:
             {{
-                "title": "Documentation: [Content Name]",
-                "introduction": "Overview of the content and purpose of this document",
+                "title": "Knowledge Transfer Document: [Product/Process Name or Generic Title if Not Specified]",
+                "introduction": "Purpose and overview of this document.",
                 "sections": [
                     {{
-                        "title": "Section Title (based on the content's natural sections)",
-                        "content": "Full and refined speech content for this section, preserving all important details",
-                        "screenshot_timestamps": [list of timestamps where screenshots should be placed in this section],
+                        "title": "Section Title (e.g., 'Product/Process Overview', 'Key Features', 'Workflows', 'Discussion Summary')",
+                        "content": "Detailed explanation with relavant information discussed in the video.",
+                        "screenshot_timestamps": [list of timestamps where screenshots should appear],
                         "subsections": [
                             {{
-                                "title": "Subsection Title (for logical breaks in content)",
-                                "content": "Detailed content with all important information preserved",
-                                "screenshot_timestamps": [list of timestamps for visual aids in this subsection]
+                                "title": "Subsection Title (e.g., specific feature, procedure, or discussion point)",
+                                "content": "Step-by-step instructions or detailed feature explanations",
+                                "screenshot_timestamps": [list of timestamps for this subsection]
                             }}
                         ]
                     }}
@@ -2156,10 +2160,10 @@ class DocumentGenerator:
             
             # Prepare system message based on document type
             
-            if self.document_type == "general_documentation":
+            if self.document_type == "kt_document":
                 system_message: ChatCompletionSystemMessageParam = {
                     "role": "system", 
-                    "content": "You are a comprehensive documentation expert. Your task is to preserve the complete narrative while organizing it into a well-structured document with appropriate sections, keeping the full content intact but refined for readability."
+                    "content": "You are a knowledge transfer documentation expert. Your task is to analyze product demos and create structured document that can be referenced by anyone who wants to use or continue with the current product or process."
                 }
             
             user_message: ChatCompletionUserMessageParam = {

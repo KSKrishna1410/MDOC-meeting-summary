@@ -54,8 +54,8 @@ async def upload_meeting(
     )
 
 
-@router.post("/generate/general-documentation")
-async def generate_general_documentation(
+@router.post("/generate/kt-document")
+async def generate_kt_document(
     doc_title: str = Form(...),
     session_guid: str = Form(...),
     doc_format: str = Form("PDF"),
@@ -82,7 +82,7 @@ async def generate_general_documentation(
     """
     return await document_controller.generate_meeting_document(
         doc_title=doc_title,
-        doc_type="general_documentation",
+        doc_type="kt_document",
         doc_format=doc_format,
         enable_missing_questions=enable_missing_questions,
         enable_process_map=enable_process_map,
