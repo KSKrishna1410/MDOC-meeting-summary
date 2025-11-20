@@ -3,6 +3,8 @@ import datetime
 import os
 from openai import OpenAI
 from .openai_config import get_openai_client, USE_AZURE
+import litellm
+from litellm import completion
 import whisper
 from .api_usage_logger import log_openai_usage, log_whisper_usage
 
@@ -104,8 +106,8 @@ def analyze_speech_transcript(transcript, prompt):
         try:
             if USE_AZURE:
                 # For Azure OpenAI
-                response = client.chat.completions.create(
-                    model=model,
+                response = completion(
+                    model=f"azure/{model}",
                     messages=[system_message, user_message],
                     temperature=0.3,
                     response_format={"type": "json_object"}
@@ -113,8 +115,8 @@ def analyze_speech_transcript(transcript, prompt):
                 
             else:
                 # For standard OpenAI
-                response = client.chat.completions.create(
-                    model=model,
+                response = completion(
+                    model=f"azure/{model}",
                     messages=[system_message, user_message],
                     temperature=0.3,
                     response_format={"type": "json_object"}

@@ -7,7 +7,11 @@ This script helps set up environment variables for Azure OpenAI Service.
 import os
 import sys
 import argparse
+from litellm import completion
+import litellm
+
 import subprocess
+
 
 def main():
     parser = argparse.ArgumentParser(description="Set up Azure OpenAI credentials")
@@ -83,8 +87,8 @@ def main():
             try:
                 print(f"Testing Azure OpenAI with model/deployment: {deployment}")
                 # Azure OpenAI requires BOTH model and deployment_id parameters
-                response = client.chat.completions.create(
-                    model=deployment,      # Required for Azure!
+                response = completion(
+                    model=f"azure/{deployment}",      # Required for Azure!
                     # deployment_id=deployment,
                     messages=messages,
                     max_tokens=100

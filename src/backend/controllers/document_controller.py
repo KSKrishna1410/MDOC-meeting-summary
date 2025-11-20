@@ -8,9 +8,10 @@ import logging
 import zipfile
 import io
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple, Union
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
-from fastapi import UploadFile, HTTPException, Response
+from urllib.parse import unquote, urlparse
+from fastapi import UploadFile, HTTPException
 
 # Import business logic from main.py
 import sys
@@ -23,12 +24,36 @@ from main import (
     get_video_duration_ffprobe
 )
 from src.utils.media_utils import get_video_info
+from src.utils.s3_utility import S3Utility
 
 logger = logging.getLogger(__name__)
 
 # In-memory storage for processed data (screenshots, etc.)
 # In production, consider using Redis or a database
 _session_storage: Dict[str, Dict[str, Any]] = {}
+s3_utility = S3Utility()
+TEMP_DATA_DIR = Path("data/temp")
+DOCUMENTS_S3_FOLDER = os.getenv("S3_DOCUMENT_FOLDER", "meeting-documents")
+
+
+def _ensure_temp_dir() -> None:
+    TEMP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _save_bytes_to_temp_file(file_content: bytes, file_suffix: str) -> str:
+    _ensure_temp_dir()
+    suffix = file_suffix if file_suffix else ".tmp"
+    temp_filename = f"{uuid.uuid4()}{suffix}"
+    temp_path = TEMP_DATA_DIR / temp_filename
+    with open(temp_path, "wb") as temp_file:
+        temp_file.write(file_content)
+    return str(temp_path)
+
+
+def _extract_filename_and_suffix_from_url(file_url: str) -> Tuple[str, str]:
+    parsed_url = urlparse(unquote(file_url))
+    filename = Path(parsed_url.path).name or f"video_{uuid.uuid4()}.mp4"
+    return filename, Path(filename).suffix.lower()
 
 
 async def save_uploaded_file(upload_file: UploadFile) -> str:
@@ -42,13 +67,12 @@ async def save_uploaded_file(upload_file: UploadFile) -> str:
         Path to saved file
     """
     # Create temp directory if it doesn't exist
-    temp_dir = Path("data/temp")
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    _ensure_temp_dir()
     
     # Generate unique filename
     file_ext = Path(upload_file.filename).suffix
     temp_filename = f"{uuid.uuid4()}{file_ext}"
-    temp_path = temp_dir / temp_filename
+    temp_path = TEMP_DATA_DIR / temp_filename
     
     try:
         # Save file
@@ -64,7 +88,8 @@ async def save_uploaded_file(upload_file: UploadFile) -> str:
 
 
 async def process_meeting(
-    file: UploadFile,
+    file: Optional[UploadFile],
+    file_url: Optional[str],
     client_name: str,
     detection_mode: str = "basic",
     use_speech: bool = True,
@@ -77,6 +102,7 @@ async def process_meeting(
     
     Args:
         file: Uploaded video file
+        file_url: S3 URL to the video file
         client_name: Name of the client
         detection_mode: "basic" or "advanced"
         use_speech: Enable speech-based keyword detection
@@ -87,18 +113,40 @@ async def process_meeting(
     Returns:
         Dictionary containing processing results
     """
-    # Validate file type
-    allowed_extensions = {".mp4", ".avi", ".mov", ".mkv"}
-    file_ext = Path(file.filename).suffix.lower()
-    
-    if file_ext not in allowed_extensions:
+    if not file and not file_url:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
+            detail="Either a file upload or an S3 file URL must be provided."
         )
+
+    # Validate file type
+    allowed_extensions = {".mp4", ".avi", ".mov", ".mkv"}
+    video_path: Optional[str] = None
+    original_filename: str = ""
+    file_ext: str = ""
+
+    if file:
+        file_ext = Path(file.filename).suffix.lower()
+        original_filename = file.filename
+        if file_ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: {', '.join(sorted(allowed_extensions))}"
+            )
+        video_path = await save_uploaded_file(file)
+    else:
+        original_filename, file_ext = _extract_filename_and_suffix_from_url(file_url)
+        if file_ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type from S3 URL. Allowed: {', '.join(sorted(allowed_extensions))}"
+            )
+        try:
+            file_bytes = s3_utility.get_data_from_s3_by_url(file_url)
+        except HTTPException:
+            raise
+        video_path = _save_bytes_to_temp_file(file_bytes, file_ext or ".mp4")
     
-    # Save uploaded file
-    video_path = await save_uploaded_file(file)
     session_guid = str(uuid.uuid4())
     
     try:
@@ -152,7 +200,7 @@ async def process_meeting(
             "session_id": result["session_id"],
             "video_path": video_path,
             "video_info": {
-                "filename": os.path.basename(video_path),
+                "filename": os.path.basename(original_filename or video_path),
                 "duration_minutes": video_duration,
                 "fps": video_info["fps"],
                 "frame_count": video_info["frame_count"],
@@ -192,7 +240,7 @@ async def generate_meeting_document(
     session_guid: Optional[str] = None,
     video_path: Optional[str] = None,
     client_name: Optional[str] = None
-) -> Union[Response, Dict[str, Any]]:
+) -> Dict[str, Any]:
     """
     Generate document from processed video
     
@@ -291,51 +339,57 @@ async def generate_meeting_document(
         doc_title_safe = result["title"].replace(" ", "_")
         today_date = datetime.now().strftime("%Y-%m-%d")
         
-        # If format is "Both", return a zip file
+        session_folder = session_guid or str(uuid.uuid4())
+        s3_folder = f"{DOCUMENTS_S3_FOLDER}/{session_folder}".strip("/")
+        base_filename = f"{doc_title_safe}_{result['doc_type']}_{today_date}"
+
+        def _upload_and_presign(file_bytes: bytes, filename: str) -> Tuple[str, str]:
+            file_url = s3_utility.upload_file(file_bytes, filename, s3_folder)
+            presigned_url = s3_utility.generate_presigned_url(file_url)
+            return file_url, presigned_url
+
+        upload_details: Dict[str, Any] = {}
+
         if result["format"] == "Both":
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                 if result.get("pdf_bytes"):
-                    zip_file.writestr(
-                        f"{doc_title_safe}_{result['doc_type']}_{today_date}.pdf",
-                        result["pdf_bytes"]
-                    )
+                    zip_file.writestr(f"{base_filename}.pdf", result["pdf_bytes"])
                 if result.get("docx_bytes"):
-                    zip_file.writestr(
-                        f"{doc_title_safe}_{result['doc_type']}_{today_date}.docx",
-                        result["docx_bytes"]
-                    )
+                    zip_file.writestr(f"{base_filename}.docx", result["docx_bytes"])
             zip_buffer.seek(0)
-            
-            return Response(
-                content=zip_buffer.getvalue(),
-                media_type="application/zip",
-                headers={
-                    "Content-Disposition": f'attachment; filename="{doc_title_safe}_{result["doc_type"]}_{today_date}.zip"'
+            if zip_buffer.getbuffer().nbytes == 0:
+                return {
+                    "success": False,
+                    "message": "No documents generated for upload.",
+                    "doc_format": result["format"]
                 }
-            )
-        
-        # If format is PDF only
+            s3_url, presigned_url = _upload_and_presign(zip_buffer.getvalue(), f"{base_filename}.zip")
+            upload_details = {
+                "s3_url": s3_url,
+                "download_url": presigned_url,
+                "file_name": f"{base_filename}.zip",
+                "content_type": "application/zip"
+            }
+
         elif result["format"] == "PDF" and result.get("pdf_bytes"):
-            return Response(
-                content=result["pdf_bytes"],
-                media_type="application/pdf",
-                headers={
-                    "Content-Disposition": f'attachment; filename="{doc_title_safe}_{result["doc_type"]}_{today_date}.pdf"'
-                }
-            )
-        
-        # If format is DOCX only
+            s3_url, presigned_url = _upload_and_presign(result["pdf_bytes"], f"{base_filename}.pdf")
+            upload_details = {
+                "s3_url": s3_url,
+                "download_url": presigned_url,
+                "file_name": f"{base_filename}.pdf",
+                "content_type": "application/pdf"
+            }
+
         elif result["format"] in ["DOCX", "WORD"] and result.get("docx_bytes"):
-            return Response(
-                content=result["docx_bytes"],
-                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                headers={
-                    "Content-Disposition": f'attachment; filename="{doc_title_safe}_{result["doc_type"]}_{today_date}.docx"'
-                }
-            )
-        
-        # Fallback: return JSON if no files generated
+            s3_url, presigned_url = _upload_and_presign(result["docx_bytes"], f"{base_filename}.docx")
+            upload_details = {
+                "s3_url": s3_url,
+                "download_url": presigned_url,
+                "file_name": f"{base_filename}.docx",
+                "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            }
+
         else:
             return {
                 "success": False,
@@ -343,6 +397,15 @@ async def generate_meeting_document(
                 "has_pdf": result.get("pdf_bytes") is not None,
                 "has_docx": result.get("docx_bytes") is not None
             }
+
+        return {
+            "success": True,
+            "session_guid": session_guid,
+            "doc_title": result["title"],
+            "doc_type": result["doc_type"],
+            "doc_format": result["format"],
+            **upload_details
+        }
         
     except Exception as e:
         logger.error(f"Error generating document: {e}", exc_info=True)

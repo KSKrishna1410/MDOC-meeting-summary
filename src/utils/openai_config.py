@@ -53,6 +53,16 @@ else:
     AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
     AZURE_GPT_DEPLOYMENT_NAME = os.getenv("AZURE_GPT_DEPLOYMENT_NAME", "") 
 
+# Provide Litellm-compatible environment variable aliases so both naming schemes work
+if AZURE_OPENAI_API_KEY and not os.getenv("AZURE_API_KEY"):
+    os.environ["AZURE_API_KEY"] = AZURE_OPENAI_API_KEY
+if AZURE_OPENAI_ENDPOINT and not os.getenv("AZURE_API_BASE"):
+    os.environ["AZURE_API_BASE"] = AZURE_OPENAI_ENDPOINT
+if AZURE_OPENAI_API_VERSION and not os.getenv("AZURE_API_VERSION"):
+    os.environ["AZURE_API_VERSION"] = AZURE_OPENAI_API_VERSION
+if AZURE_GPT_DEPLOYMENT_NAME and not os.getenv("AZURE_API_DEPLOYMENT_NAME"):
+    os.environ["AZURE_API_DEPLOYMENT_NAME"] = AZURE_GPT_DEPLOYMENT_NAME
+
 # Check if Azure OpenAI or regular OpenAI should be used
 USE_AZURE = AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY and AZURE_GPT_DEPLOYMENT_NAME
 

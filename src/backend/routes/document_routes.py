@@ -11,7 +11,8 @@ router = APIRouter()
 
 @router.post("/upload")
 async def upload_meeting(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    file_url: Optional[str] = Form(None),
     client_name: str = Form(...),
     detection_mode: str = Form("basic"),
     use_speech: bool = Form(True),
@@ -22,7 +23,8 @@ async def upload_meeting(
     """
     Upload and process meeting recording
     
-    - **file**: Video file (MP4, AVI, MOV, MKV)
+    - **file_url**: HTTPS/S3 URL pointing to a video already in S3 (preferred)
+    - **file**: Legacy multipart video upload (MP4, AVI, MOV, MKV)
     - **client_name**: Name of the client
     - **detection_mode**: Processing mode ("basic" or "advanced")
     - **use_speech**: Enable speech-based keyword detection
@@ -33,12 +35,16 @@ async def upload_meeting(
     Returns:
     - **transcript**: Full transcript with timestamps (list of {timestamp, text})
     - **screenshots**: Screenshot metadata (list of {timestamp, reason})
-    - **session_guid**: Use this for document generation
-    - **video_path**: Use this for document generation
+    - **session_guid**: Use this for document generation / download
+    - **video_path**: Temporary path used during processing
     - Processing statistics and video info
     """
+    if not file and not file_url:
+        raise HTTPException(status_code=400, detail="Provide either file upload or file_url.")
+
     return await document_controller.process_meeting(
         file=file,
+        file_url=file_url,
         client_name=client_name,
         detection_mode=detection_mode,
         use_speech=use_speech,
@@ -72,9 +78,7 @@ async def generate_meeting_summary(
     - **client_name**: Optional - only needed if session_guid not provided
     
     Returns:
-    - **PDF format**: Returns PDF file directly (downloadable)
-    - **DOCX format**: Returns DOCX file directly (downloadable)
-    - **Both format**: Returns ZIP file containing both PDF and DOCX (downloadable)
+    - JSON response containing an S3 presigned download URL for the generated file
     """
     return await document_controller.generate_meeting_document(
         doc_title=doc_title,

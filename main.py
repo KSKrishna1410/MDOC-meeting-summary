@@ -4,8 +4,15 @@ Main application file for Meeting Document Generator
 Contains all business logic functions that can be used without UI
 """
 
-import os
 import sys
+import io
+
+# Fix Windows encoding issues FIRST
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+import os
 import tempfile
 import time
 import uuid
@@ -15,6 +22,9 @@ from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any, Callable
 from datetime import datetime
 from dotenv import load_dotenv
+from litellm import completion
+import litellm
+
 
 # Add project root to path
 project_root = Path(__file__).parent
@@ -64,6 +74,7 @@ usage_log = UsageCostLogger()
 # Load configuration
 config_loader = get_config_loader()
 app_config = config_loader.get_config('app_config.yaml')
+
 
 
 def generate_session_id() -> str:
@@ -175,8 +186,8 @@ def extract_meeting_attendees(speech_segments: List[Tuple[float, str]], client: 
         if model is None:
             model = get_chat_model_name()
         
-        response = client.chat.completions.create(
-            model=model,
+        response = completion(
+            model=f"azure/{model}",
             messages=[
                 {"role": "system", "content": "You are an expert at identifying speakers in meetings. Extract attendee names from transcripts."},
                 {"role": "user", "content": prompt}
@@ -248,8 +259,8 @@ def extract_meeting_highlights(speech_segments: List[Tuple[float, str]], client:
         if model is None:
             model = get_chat_model_name()
         
-        response = client.chat.completions.create(
-            model=model,
+        response = completion(
+            model=f"azure/{model}",
             messages=[
                 {"role": "system", "content": "You are an expert at identifying key points in meetings. Extract the most important discussion points from transcripts."},
                 {"role": "user", "content": prompt}

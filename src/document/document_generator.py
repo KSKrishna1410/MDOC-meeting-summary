@@ -18,6 +18,9 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Image, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib.colors import black, blue, red, green
+import litellm
+from litellm import completion
+
 
 # For diagram generation using mermaid.ink API
 from PIL import Image as PILImage
@@ -43,7 +46,16 @@ import json
 import os
 
 # Import our centralized OpenAI configuration
-from ..utils.openai_config import get_openai_client, get_chat_model_name, OPENAI_AVAILABLE, USE_AZURE
+from ..utils.openai_config import (
+    get_openai_client,
+    get_chat_model_name,
+    OPENAI_AVAILABLE,
+    USE_AZURE,
+    AZURE_OPENAI_ENDPOINT,
+    AZURE_OPENAI_API_KEY,
+    AZURE_OPENAI_API_VERSION,
+    OPENAI_API_KEY
+)
 import logging
 
 from ..utils.logger_config import setup_logger
@@ -1274,7 +1286,6 @@ class DocumentGenerator:
         """
         self.video_path = video_path
         self.screenshots = screenshots
-        self.use_ai = use_ai and OPENAI_AVAILABLE
         self.title = title if title else os.path.basename(video_path).split('.')[0]
         self.description = description if description else f"Documentation generated from {os.path.basename(video_path)}"
         self.speech_segments = speech_segments if speech_segments else []
@@ -1291,13 +1302,40 @@ class DocumentGenerator:
         self.screenshots.sort(key=lambda x: x[1])
         
         # Initialize OpenAI client if available
-        if self.use_ai and OPENAI_AVAILABLE:
-            self.client = get_openai_client()
-            self.model = get_chat_model_name()
-        else:
-            self.client = None
-            self.model = None
+        self.model = get_chat_model_name()
+        self.completion = completion
 
+        self._litellm_model = None
+        self._litellm_kwargs: Dict[str, Any] = {}
+
+        if self.model:
+            self._litellm_model = f"azure/{self.model}" if USE_AZURE else self.model
+
+        if USE_AZURE and AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT:
+            self._litellm_kwargs = {
+                "api_key": AZURE_OPENAI_API_KEY,
+                "api_base": AZURE_OPENAI_ENDPOINT,
+                "base_url": AZURE_OPENAI_ENDPOINT,
+                "api_version": AZURE_OPENAI_API_VERSION or "2024-02-01"
+            }
+        elif not USE_AZURE and OPENAI_API_KEY:
+            self._litellm_kwargs = {"api_key": OPENAI_API_KEY}
+
+        self.use_ai = bool(use_ai and self._litellm_model and self._litellm_kwargs)
+
+
+    def _invoke_completion(self, messages: List[Dict[str, Any]], **kwargs):
+        """
+        Wrapper around litellm.completion that injects the correct model and Azure/OpenAI credentials.
+        """
+        if not self.use_ai or not self._litellm_model:
+            raise RuntimeError("AI completion requested but configuration is unavailable.")
+        
+        request_kwargs = dict(self._litellm_kwargs)
+        request_kwargs.update(kwargs)
+        request_kwargs["model"] = self._litellm_model
+        request_kwargs["messages"] = messages
+        return self.completion(**request_kwargs)
     
 
     def generate_mermaid_editor_url_docx(self, mermaid_code):
@@ -1674,16 +1712,6 @@ class DocumentGenerator:
             Enhanced contextual reason string
         """
         try:
-            from openai_config import get_openai_client, get_chat_model_name
-            
-            client = get_openai_client()
-            if not client:
-                return f"Key moment at {timestamp:.1f}s"
-            
-            model_name = get_chat_model_name()
-            if not model_name:
-                return f"Key moment at {timestamp:.1f}s"
-            
             prompt = f"""
             Analyze this screenshot moment and provide a brief, contextual description.
             
@@ -1701,8 +1729,7 @@ class DocumentGenerator:
             Examples: "Login screen demonstration", "Dashboard navigation", "Settings configuration", "Report generation process"
             """
             
-            response = client.chat.completions.create(
-                model=model_name,
+            response = self._invoke_completion(
                 messages=[
                     {"role": "system", "content": "You are an expert at analyzing video content and providing concise, contextual descriptions."},
                     {"role": "user", "content": prompt}
@@ -1794,7 +1821,7 @@ class DocumentGenerator:
         Returns:
             String containing formatted missing questions
         """
-        if not self.use_ai or not self.client or not self.speech_segments:
+        if not self.use_ai or not self.speech_segments:
             return ""
             
         # Combine all speech segments into a full transcript
@@ -1832,8 +1859,7 @@ class DocumentGenerator:
         """
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
+            response = self._invoke_completion(
                 messages=[
                     {"role": "system", "content": "You are an expert meeting analyst who identifies missing questions and areas that need follow-up."},
                     {"role": "user", "content": prompt}
@@ -1863,7 +1889,7 @@ class DocumentGenerator:
         Returns:
             String containing text-based process map with mermaid diagram
         """
-        if not self.use_ai or not self.client or not self.speech_segments:
+        if not self.use_ai or not self.speech_segments:
             return ""
             
         # Combine all speech segments into a full transcript
@@ -1900,8 +1926,7 @@ class DocumentGenerator:
         """
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
+            response = self._invoke_completion(
                 messages=[
                     {"role": "system", "content": "You are an expert business process analyst who creates clear process maps from meeting transcripts."},
                     {"role": "user", "content": prompt}
@@ -1932,7 +1957,7 @@ class DocumentGenerator:
             Dictionary containing structured documentation content
         """
         logging.info(f"DEBUG: Generating narrative documentation with {len(self.screenshots)} screenshots")
-        if not self.use_ai or not OPENAI_AVAILABLE or not self.client:
+        if not self.use_ai:
             # Fall back to basic structure if AI is not available
             return {
                 "title": self.title,
@@ -2129,35 +2154,25 @@ class DocumentGenerator:
             
             # Call OpenAI API
             try:
-                if USE_AZURE and self.model is not None:
-                    logging.info(f"Using Azure OpenAI with deployment: {self.model}")
-                    # Azure OpenAI requires both model and deployment_id parameters
-                    response = self.client.chat.completions.create(
-                        model=self.model,  # Required for Azure even with deployment_id
-                        # deployment_id=self.model,  # Deployment ID for Azure
-                        messages=[system_message, user_message],
-                        temperature=0.7,
-                        response_format={"type": "json_object"}
-                    )
-                    usage = response.usage
-                    if usage:
-                        log_openai_usage(
-                            module_name=__name__,
-                            model=get_chat_model_name(),
-                            prompt_tokens=usage.prompt_tokens,
-                            completion_tokens=usage.completion_tokens,
-                            function_name="_convert_mermaid_to_dot"
-                        )
-                elif self.model is not None:
-                    logging.info(f"Using standard OpenAI with model: {self.model}")
-                    response = self.client.chat.completions.create(
-                        model=self.model,  # "gpt-4o" is the newest OpenAI model released May 13, 2024
-                        messages=[system_message, user_message],
-                        temperature=0.7,
-                        response_format={"type": "json_object"}
-                    )
-                else:
+                if not self.use_ai or self._litellm_model is None:
                     raise ValueError("Model name not configured properly")
+
+                response = self._invoke_completion(
+                    messages=[system_message, user_message],
+                    temperature=0.7,
+                    response_format={"type": "json_object"}
+                )
+
+                usage = response.usage
+                if usage:
+                    log_openai_usage(
+                        module_name=__name__,
+                        model=self.model or "",
+                        prompt_tokens=usage.prompt_tokens,
+                        completion_tokens=usage.completion_tokens,
+                        function_name="_generate_narrative_documentation"
+                    )
+
                 logging.info(f"API call successful for narrative document generation")
             except Exception as e:
                 logging.info(f"API call error details: {str(e)}")

@@ -4,3 +4,6 @@ venv_*/
 ffmpeg-*
 .env
 .DS_Store
+app.log
+usage.log
+app.log.*
