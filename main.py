@@ -468,7 +468,7 @@ def generate_document(
     screenshots: List[Tuple[Any, float, str]],
     client_name: str,
     doc_title: str,
-    doc_type: str = "meeting_summary",
+    doc_type: str = "user_story_generator",
     doc_format: str = "PDF",
     speech_segments: Optional[List[Tuple[float, str]]] = None,
     enable_missing_questions: bool = True,
@@ -512,12 +512,9 @@ def generate_document(
         video_duration = get_video_duration_ffprobe(video_path)
         # Set description based on document type
         doc_type_descriptions = {
-            "kt_document": "Knowledge transfer documentation with step-by-step instructions and visual guides.",
-            "meeting_summary": "Meeting summary with key discussion points, decisions, and action items.",
-            "user_story_generator": "Collection of user stories with acceptance criteria from requirements discussions.",
-            "general_documentation": "Comprehensive documentation with full content and relevant screenshots."
+            "user_story_generator": "Collection of user stories with acceptance criteria from requirements discussions."
         }
-        doc_description = doc_type_descriptions.get(doc_type, doc_type_descriptions["general_documentation"])
+        doc_description = doc_type_descriptions.get(doc_type, doc_type_descriptions["user_story_generator"])
         
         # Prepare speech segments
         if speech_segments is None:
@@ -605,7 +602,7 @@ def process_video_and_generate_document(
     video_path: str,
     client_name: str,
     doc_title: str,
-    doc_type: str = "meeting_summary",
+    doc_type: str = "user_story_generator",
     doc_format: str = "PDF",
     detection_mode: str = "basic",
     use_speech: bool = True,
@@ -700,8 +697,8 @@ def main_cli():
     parser.add_argument("--video", required=True, help="Path to video file")
     parser.add_argument("--client", required=True, help="Client name")
     parser.add_argument("--title", required=True, help="Document title")
-    parser.add_argument("--doc-type", default="meeting_summary", 
-                       choices=["meeting_summary"],
+    parser.add_argument("--doc-type", default="user_story_generator", 
+                       choices=["user_story_generator"],
                        help="Document type")
     parser.add_argument("--format", default="PDF", choices=["PDF", "DOCX", "Both"],
                        help="Output format")

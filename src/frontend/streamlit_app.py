@@ -466,7 +466,7 @@ def main():
 
         with sub_column2:
             doc_type_options = {
-                "meeting_summary": "📝 Meeting Summary", 
+                "User Story Generator": "📝 User Story Generator", 
 
             }
 
@@ -555,7 +555,7 @@ def main():
             with main_tab1:
                 # Enhanced document downloads table
                 doc_type_options = {
-                    "meeting_summary": "📝 Meeting Summary", 
+                    "User Story Generator": "📝 User Story Generator", 
                 }
                 
                 

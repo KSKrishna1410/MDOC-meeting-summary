@@ -232,7 +232,7 @@ async def process_meeting(
 
 async def generate_meeting_document(
     doc_title: str,
-    doc_type: str = "meeting_summary",
+    doc_type: str = "user_story_generator",
     doc_format: str = "PDF",
     enable_missing_questions: bool = True,
     enable_process_map: bool = True,

@@ -2101,7 +2101,7 @@ class DocumentGenerator:
         screenshot_context += "- Skip screenshots that don't fit naturally into any section"
         
         # Prepare analysis prompt based on document type
-        if self.document_type == "meeting_summary":
+        if self.document_type == "user_story_generator":
             # Meeting Summary with metadata
             metadata_info = ""
             if self.meeting_participants:
@@ -2115,47 +2115,40 @@ class DocumentGenerator:
                 metadata_info += f"\nMeeting Duration: {duration}"
             
             prompt = f"""
-            You are a meeting summary generating agent. I'll be providing you the attendees present in meeting and the key discussion ponits in the Meeting Metadata and Meeting transcription. I need you to analyze the transcript and metadata provided from a meeting recording and generate a structured meeting summary document.
-            
-            MEETING METADATA:
-            {metadata_info if metadata_info else "No metadata provided"}
-            
+            I need you to analyze the transcript from a requirements discussion or a meeting and generate well-structured user stories.
+
             TRANSCRIPT:
             {full_transcript}
             {screenshot_context}
-            
-            This is a MEETING SUMMARY document that should:
-            1. **Start with a "Meeting Information" section** that includes:
-            - Date of meeting
-            - Attendees: {', '.join(self.meeting_participants) if self.meeting_participants else '[From transcript]'}
-            - Meeting Duration: {duration if self.meeting_duration_minutes else '[From transcript]'}
-            - Key Discussion Points as bullet points
-            2. Identify the key discussion points, decisions, and action items from the meeting
-            3. Organize information by discussion topics rather than chronologically
-            4. Highlight important agreements, deadlines, and assigned responsibilities
-            5. Note timestamps where significant points were discussed
-            6. Focus on creating a concise summary that captures the essential outcomes
-            7. Do not omit any important information from the transcript
-            8. Do not generate additional content - everything must be based on the transcript
-            
-            Format your response as JSON with this structure:
+
+            This is a USER STORY GENERATOR document that should:
+            1. Identify and extract user requirements from the discussion
+            2. Format each requirement as a proper user story following the format "As a [type of user], I want [goal] so that [benefit]"
+            3. Add acceptance criteria for each user story
+            4. Group related user stories into epics or features
+            5. Identify timestamps where requirements are being discussed (for screenshot placement)
+            6. Assign priority levels to user stories when possible (High/Medium/Low)
+            8. There might be other relevant information in the discussion as well. Capture all useful information from the discussion.
+            9. Donot generate additional own content. Everything has to be based on the transcript.
+
+
+            Format your response as a JSON object with the following structure:
             {{
-                "title": "Meeting Summary: [Meeting Topic]",
-                "introduction": "Brief overview of the meeting purpose and participants",
+                "title": "User Stories: [Project Name]",
+                "introduction": "Collection of user stories derived from requirements discussions for [Project Name]",
                 "sections": [
                     {{
-                        "title": "Meeting Information",
-                        "content": "**Date:** {datetime.now().strftime('%B %d, %Y')}\\n**Attendees:** {', '.join(self.meeting_participants) if self.meeting_participants else 'See discussion'}\\n**Duration:** {duration if self.meeting_duration_minutes else 'See transcript'}\\n\\n**Key Points Discussed:**\\n{chr(10).join(['• ' + h for h in self.meeting_highlights]) if self.meeting_highlights else 'See sections below'}",
-                        "screenshot_timestamps": [],
-                        "subsections": []
-                    }},
-                    {{
-                        "title": "Discussion Topics",
-                        "content": "...",
-                        "screenshot_timestamps": [...],
-                        "subsections": [...]
-                    }},
-                    ...
+                        "title": "Epic/Feature Name",
+                        "content": "Overview of this group of related user stories",
+                        "screenshot_timestamps": [list of timestamps where requirements for this epic were discussed],
+                        "subsections": [
+                            {{
+                                "title": "User Story: [Brief Story Title]",
+                                "content": "As a [user type], I want [goal] so that [benefit]\\n\\nAcceptance Criteria:\\n- Criterion 1\\n- Criterion 2\\n\\nPriority: [priority level]",
+                                "screenshot_timestamps": [list of timestamps relevant to this specific user story]
+                            }}
+                        ]
+                    }}
                 ]
             }}
             """
@@ -2164,10 +2157,10 @@ class DocumentGenerator:
             
             # Prepare system message based on document type
             
-            if self.document_type == "meeting_summary":
+            if self.document_type == "user_story_generator":
                 system_message: ChatCompletionSystemMessageParam = {
                     "role": "system", 
-                    "content": "You are a meeting summary expert. Your task is to analyze meeting transcripts and create structured summaries that capture key discussion points, decisions, and action items."
+                    "content": "You are a requirements analysis expert. Your task is to extract user stories from discussions and format them in a structured way with clear acceptance criteria."
                 }
             
             user_message: ChatCompletionUserMessageParam = {

@@ -8,8 +8,10 @@ Example:
 
 import argparse
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 from src.utils.s3_utility import S3Utility
 
@@ -35,6 +37,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    load_dotenv()
     args = parse_args()
     source_path = Path(args.file).expanduser().resolve()
 
@@ -44,10 +47,16 @@ def main() -> None:
 
     file_bytes = source_path.read_bytes()
 
-    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     dest_filename = f"{args.prefix}-{timestamp}-{source_path.name}"
 
     s3 = S3Utility()
+    if not s3.bucket_name:
+        print(
+            "❌ S3_BUCKET_NAME environment variable is not set. Please configure it before running this script.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     try:
         url = s3.upload_file(file_bytes, dest_filename, args.folder)
     except Exception as exc:
@@ -59,5 +68,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    #python test_upload.py --file data/temp/your-video.mp4 --folder uploads/videos --prefix myrun
-
+    # python test_upload.py --file data/temp/your-video.mp4 --folder uploads/videos --prefix myrun
