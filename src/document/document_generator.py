@@ -1339,6 +1339,24 @@ class DocumentGenerator:
         request_kwargs["messages"] = messages
         return self.completion(**request_kwargs)
     
+    def _clean_json_response(self, content: str) -> str:
+        """
+        Remove Markdown code fences (``` or ```json) that models sometimes wrap around JSON responses.
+        """
+        if not content:
+            return content
+        
+        cleaned = content.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.splitlines()
+            # Drop the opening fence line (e.g., ```json)
+            lines = lines[1:]
+            # Remove any trailing fence markers
+            while lines and lines[-1].strip() == "```":
+                lines.pop()
+            cleaned = "\n".join(lines).strip()
+        return cleaned
+    
 
     def generate_mermaid_editor_url_docx(self, mermaid_code):
         """
@@ -2187,8 +2205,9 @@ class DocumentGenerator:
             # Parse generated documentation structure
             content = response.choices[0].message.content
             if content:
+                cleaned_content = self._clean_json_response(content)
                 try:
-                    doc_structure = json.loads(content)
+                    doc_structure = json.loads(cleaned_content)
                     
                     # Debug the document structure
                     logging.info(f"DEBUG: Document structure received from AI")
