@@ -3,24 +3,22 @@ import json
 import time
 import logging
 
-# Import OpenAI configuration
-from .openai_config import get_openai_client, get_chat_model_name, OPENAI_AVAILABLE, USE_AZURE
+# Import Gemini configuration
+from .openai_config import get_chat_model_name, OPENAI_AVAILABLE, GEMINI_AVAILABLE
 
 from .logger_config import setup_logger
 
 setup_logger()
 
-# Get the appropriate client and model name
-client = get_openai_client()
+# Get the Gemini model name
 MODEL = get_chat_model_name()
 
 # Log connection status
-if OPENAI_AVAILABLE:
-    logging.info(f"OpenAI configured: {'Azure OpenAI' if USE_AZURE else 'Standard OpenAI'}")
-    logging.info(f"Using model/deployment: {MODEL}")
+if GEMINI_AVAILABLE:
+    logging.info(f"Gemini configured via LiteLLM")
+    logging.info(f"Using model: {MODEL}")
 else:
-    logging.warning("OpenAI API not configured correctly")
-    client = None
+    logging.warning("Gemini API not configured correctly")
     OPENAI_AVAILABLE = False
 
 def analyze_speech_for_screenshot_moments(speech_segments):

@@ -1,8 +1,7 @@
 import cv2
 import datetime
 import os
-from openai import OpenAI
-from .openai_config import get_openai_client, USE_AZURE
+from .openai_config import get_chat_model_name, GEMINI_AVAILABLE
 import litellm
 from litellm import completion
 import whisper
@@ -35,39 +34,14 @@ def transcribe_with_whisper(audio_file_path):
     except Exception as e:
         print(f"Local Whisper model not available or failed: {e}, falling back to API")
     
-    # Fallback: Use OpenAI Whisper API
-    try:
-        print("Using OpenAI Whisper API for transcription")
-        std_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
-        
-        # Get audio duration for logging
-        audio_duration = _get_audio_duration(audio_file_path)
-        file_size_mb = _get_file_size_mb(audio_file_path)
-        
-        with open(audio_file_path, "rb") as audio_file:
-            response = std_client.audio.transcriptions.create(
-                file=audio_file,
-                model="whisper-1"
-            )
-        
-        # Log Whisper usage
-        log_whisper_usage(
-            module_name=__name__,
-            model="whisper-1",
-            duration_seconds=audio_duration,
-            function_name="transcribe_with_whisper",
-            file_size_mb=file_size_mb
-        )
-        
-        return response.text
-    except Exception as e:
-        print(f"Error transcribing with Whisper API: {e}")
-        return ""
+    # Note: OpenAI Whisper API fallback removed - using local Whisper only
+    # If local Whisper fails, return empty string
+    print("Local Whisper transcription failed, no API fallback available")
+    return ""
 
 def analyze_speech_transcript(transcript, prompt):
     """
-    Analyze a speech transcript using the configured OpenAI service.
-    If Azure OpenAI is available, it will be used, otherwise fallback to standard OpenAI.
+    Analyze a speech transcript using Gemini via LiteLLM.
     
     Args:
         transcript (str): The transcribed text to analyze
@@ -79,48 +53,30 @@ def analyze_speech_transcript(transcript, prompt):
     try:
         import json
         from typing import List, Dict, Any
-        from .openai_config import get_openai_client, get_chat_model_name, USE_AZURE
-        from openai.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
+        from .openai_config import get_chat_model_name, GEMINI_AVAILABLE
         
-        # Get the appropriate client (Azure or standard OpenAI)
-        client = get_openai_client()
-        model = get_chat_model_name()
-        
-        if client is None:
-            print("OpenAI client not initialized. Cannot analyze speech transcript.")
+        if not GEMINI_AVAILABLE:
+            print("Gemini API not configured. Cannot analyze speech transcript.")
             return {}
         
-        # Prepare messages with proper typing
-        system_message: ChatCompletionSystemMessageParam = {
-            "role": "system", 
-            "content": prompt
-        }
+        model = get_chat_model_name()
         
-        user_message: ChatCompletionUserMessageParam = {
-            "role": "user", 
-            "content": transcript
-        }
+        # Prepare messages for LiteLLM
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": transcript}
+        ]
         
-        print(f"Analyzing transcript with {'Azure OpenAI' if USE_AZURE else 'standard OpenAI'}")
+        print(f"Analyzing transcript with Gemini ({model})")
         
         try:
-            if USE_AZURE:
-                # For Azure OpenAI
-                response = completion(
-                    model=f"azure/{model}",
-                    messages=[system_message, user_message],
-                    temperature=0.3,
-                    response_format={"type": "json_object"}
-                )
-                
-            else:
-                # For standard OpenAI
-                response = completion(
-                    model=f"azure/{model}",
-                    messages=[system_message, user_message],
-                    temperature=0.3,
-                    response_format={"type": "json_object"}
-                )
+            # Use Gemini via LiteLLM
+            # Note: Gemini may not support response_format, so we'll request JSON in the prompt
+            response = completion(
+                model=model,
+                messages=messages,
+                temperature=0.3
+            )
             
             # Extract usage information correctly
             usage = response.usage
@@ -128,24 +84,34 @@ def analyze_speech_transcript(transcript, prompt):
                 log_openai_usage(
                     module_name=__name__,
                     model=model,
-                    prompt_tokens=usage.prompt_tokens,
-                    completion_tokens=usage.completion_tokens,
+                    prompt_tokens=usage.prompt_tokens if hasattr(usage, 'prompt_tokens') else 0,
+                    completion_tokens=usage.completion_tokens if hasattr(usage, 'completion_tokens') else 0,
                     function_name="analyze_speech_transcript"
                 )
             
             # Parse and return the JSON response
             content = response.choices[0].message.content
             if content:
+                # Try to extract JSON from response (Gemini may wrap it in markdown)
+                content = content.strip()
+                if content.startswith("```json"):
+                    content = content[7:]
+                if content.startswith("```"):
+                    content = content[3:]
+                if content.endswith("```"):
+                    content = content[:-3]
+                content = content.strip()
+                
                 try:
                     return json.loads(content)
                 except json.JSONDecodeError as e:
                     print(f"Error parsing JSON response: {e}")
-                    print(f"Raw content: {content}")
+                    print(f"Raw content: {content[:200]}...")
                     return {}
             
             return {}
         except Exception as e:
-            print(f"Error calling OpenAI API: {e}")
+            print(f"Error calling Gemini API: {e}")
             return {}
     except Exception as e:
         print(f"Error in analyze_speech_transcript: {e}")
