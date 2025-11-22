@@ -2143,7 +2143,7 @@ class DocumentGenerator:
             # Prepare system message based on document type
             
             if self.document_type == "general_documentation":
-                system_message: ChatCompletionSystemMessageParam = {
+                system_message = {
                     "role": "system", 
                     "content": "You are a comprehensive documentation expert. Your task is to preserve the complete narrative while organizing it into a well-structured document with appropriate sections, keeping the full content intact but refined for readability."
                 }
