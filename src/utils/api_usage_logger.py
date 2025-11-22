@@ -4,7 +4,6 @@ import logging
 from datetime import datetime
 from typing import Optional
 from .logger_config import setup_usage_logger
-import streamlit as st
 # Use existing log configuration - don't create new files
 AGGREGATE_FILE = "token_aggregate.json"
 
@@ -13,26 +12,10 @@ usage_logger = setup_usage_logger()
 
 def _resolve_session_id(explicit_session_id: Optional[str] = None) -> str:
     """
-    Determine the session identifier for usage logging without assuming a Streamlit context.
+    Determine the session identifier for usage logging in API context.
     """
     if explicit_session_id:
         return explicit_session_id
-
-    # Try Streamlit session state if available
-    try:
-        session_state = getattr(st, "session_state", None)
-        if session_state is not None:
-            # Prefer dict-like access to avoid AttributeError when key is absent
-            if isinstance(session_state, dict):
-                session_id = session_state.get("session_guid")
-            else:
-                session_id = session_state.get("session_guid") if hasattr(session_state, "get") else None
-                if session_id is None and hasattr(session_state, "session_guid"):
-                    session_id = session_state.session_guid
-            if session_id:
-                return str(session_id)
-    except Exception:
-        pass
 
     # Fall back to environment variable or default placeholder
     env_session = os.getenv("SESSION_GUID")
