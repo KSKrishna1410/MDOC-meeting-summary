@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Entry point for Meeting Document Generator
-Supports UI (Streamlit), CLI, and API (FastAPI) modes
+Supports CLI and API (FastAPI) modes
 """
 
 import sys
@@ -17,11 +17,6 @@ if __name__ == "__main__":
         # Run CLI mode from main.py
         from main import main_cli
         main_cli()
-    # Check for UI mode
-    elif len(sys.argv) > 1 and "ui" in sys.argv:
-        # Run UI mode (Streamlit)
-        from src.frontend.streamlit_app import main
-        main()
     else:
         # Default: Run FastAPI server (API mode)
         import uvicorn
