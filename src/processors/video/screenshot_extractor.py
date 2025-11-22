@@ -28,13 +28,12 @@ from ...utils.logger_config import setup_logger
 
 setup_logger()
 
-# Conditionally import OpenAI analyzer and client
+# Conditionally import Gemini analyzer (via LiteLLM)
 try:
-    from ...utils.openai_analyzer import analyze_speech_for_screenshot_moments, OPENAI_AVAILABLE, client
+    from ...utils.openai_analyzer import analyze_speech_for_screenshot_moments, OPENAI_AVAILABLE  # OPENAI_AVAILABLE is alias for GEMINI_AVAILABLE
 except ImportError:
     OPENAI_AVAILABLE = False
-    client = None
-    def analyze_speech_for_screenshot_moments(speech_segments):
+    def analyze_speech_for_screenshot_moments(_speech_segments):
         return []  # Fallback function
 
 class ScreenshotExtractor:
@@ -161,7 +160,7 @@ class ScreenshotExtractor:
                 # -ar 16000: Set audio sampling rate to 16KHz (good for speech)
                 # -ac 1: Set audio channels to 1 (mono)
                 # -q:a 0: Use highest quality audio
-                result = subprocess.run(['ffmpeg', '-i', video_path, '-vn', '-ar', '16000', 
+                subprocess.run(['ffmpeg', '-i', video_path, '-vn', '-ar', '16000', 
                                         '-ac', '1', '-q:a', '0', self.temp_audio_file, '-y'],
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 
@@ -217,64 +216,14 @@ class ScreenshotExtractor:
                 except Exception as e:
                     logging.exception(f"Local Whisper processing failed: {e}")
             
-            # Third try: Fallback to OpenAI Whisper API only if local Whisper failed or is not available
-            # Skip API fallback if local Whisper successfully processed the video
-            if not local_whisper_succeeded and OPENAI_AVAILABLE and client is not None:
-                # Calculate video duration using OpenCV
-                cap = cv2.VideoCapture(video_path)
-                fps = cap.get(cv2.CAP_PROP_FPS)
-                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                cap.release()
-                
-                # Calculate duration
-                if fps > 0 and frame_count > 0:
-                    video_duration = frame_count / fps
-                else:
-                    video_duration = 180  # Default to 3 minutes if we can't determine
-                
-                logging.info(f"Fallback: Using OpenAI Whisper API for transcription (duration: {video_duration:.2f}s)")
-                
-                try:
-                    # Use our dedicated Whisper helper function
-                    logging.info("Uploading video to Whisper API for transcription...")
-                    
-                    # Import our Whisper transcription helper
-                    from ...utils.media_utils import transcribe_with_whisper
-                    
-                    # Use standard OpenAI for Whisper transcription
-                    transcription_text = transcribe_with_whisper(video_path)
-                    logging.info(f"Whisper transcription successful: {len(transcription_text)} characters")
-                    
-                    # Create artificial "chunks" every 15 seconds
-                    self.speech_timestamps = []
-                    num_chunks = min(12, max(1, int(video_duration / 15)))
-                    chunk_length_ms = 15000  # 15 seconds per chunk
-                    
-                    # Create empty audio chunks (we don't have actual audio data)
-                    for i in range(num_chunks):
-                        timestamp = i * (chunk_length_ms / 1000)
-                        
-                        # Create a timestamp with the portion of text
-                        # For simplicity, divide the text equally among chunks
-                        start_idx = int(i * len(transcription_text) / num_chunks)
-                        end_idx = int((i + 1) * len(transcription_text) / num_chunks)
-                        chunk_text = transcription_text[start_idx:end_idx]
-                        
-                        # Store timestamp and text
-                        if chunk_text.strip():
-                            self.speech_timestamps.append((timestamp, chunk_text))
-                            
-                            # Create a dummy audio chunk (we'll need this for the interface)
-                            empty_audio = AudioSegment.silent(duration=1000)  # 1 sec silence
-                            self.audio_chunks.append((timestamp, empty_audio))
-                    
-                    logging.info(f"Created {len(self.audio_chunks)} simulated chunks from Whisper transcription")
-                    return True
-                except Exception as e:
-                    logging.exception(f"Error using Whisper API: {e}")
+            # Note: OpenAI Whisper API fallback removed - using local Whisper only
+            # If local Whisper fails, we'll rely on Azure Speech or Google Speech Recognition
+            if not local_whisper_succeeded:
+                logging.warning("Local Whisper transcription failed. Will rely on Azure Speech or Google Speech Recognition for real-time processing.")
+                return False
             
             # If we reach here, both methods failed
-            logging.info("Could not extract audio: FFmpeg not available and OpenAI Whisper API failed")
+            logging.info("Could not extract audio: FFmpeg not available and local Whisper failed")
             return False
                 
         except Exception as e:
@@ -339,38 +288,8 @@ class ScreenshotExtractor:
                         text = self.recognizer.recognize_google(audio_data)
                     except (sr.RequestError, AttributeError, Exception) as e:
                         logging.exception(f"Google speech recognition failed: {e}")
-                        
-                        # If Google fails and OpenAI is available, try using Whisper
-                        if OPENAI_AVAILABLE and client is not None:
-                            try:
-                                # Export the audio data to a temporary file
-                                temp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-                                temp_file.close()
-                                
-                                # Use Python's wave to write the audio data
-                                import wave
-                                with wave.open(temp_file.name, 'wb') as wf:
-                                    wf.setnchannels(1)  # Mono
-                                    wf.setsampwidth(2)  # 16-bit
-                                    wf.setframerate(16000)  # 16kHz
-                                    wf.writeframes(audio_data.get_raw_data())
-                                
-                                # Use our Whisper API utility function
-                                from ...utils.media_utils import transcribe_with_whisper
-                                
-                                # This will always use standard OpenAI for Whisper transcription
-                                text = transcribe_with_whisper(temp_file.name)
-                                logging.info(f"Used Whisper API for speech recognition")
-                                
-                                # Clean up temp file
-                                try:
-                                    os.unlink(temp_file.name)
-                                except:
-                                    pass
-                                    
-                            except Exception as whisper_err:
-                                logging.exception(f"Whisper API speech recognition failed: {whisper_err}")
-                                return False, ""
+                        # Note: OpenAI Whisper API fallback removed - using local Whisper, Azure Speech, or Google only
+                        text = ""
                     
                     if not text:
                         logging.info("Speech recognition failed with all methods")
@@ -543,7 +462,6 @@ class ScreenshotExtractor:
         # Select best cursor candidate
         cursor_pos = None
         click_detected = False
-        best_confidence = 0.0
         
         if cursor_candidates:
             # Sort by confidence
@@ -633,7 +551,7 @@ class ScreenshotExtractor:
                                     # Significant shape change could indicate cursor icon changing (e.g., pointer to hand)
                                     if shape_change > 30:
                                         click_detected = True
-                                except Exception as e:
+                                except Exception:
                                     # Skip shape comparison if resize fails
                                     pass
                             
@@ -831,7 +749,7 @@ class ScreenshotExtractor:
                 # For clicks/keywords, take frame a bit after the event
                 # to capture the result of the action
                 delay_frames = min(2, len(self.frame_buffer) - 1)
-                selected_frame, selected_timestamp = self.frame_buffer[-delay_frames]
+                _, _ = self.frame_buffer[-delay_frames]  # Unpack but don't use
                 return True, f"{reason} (intelligent selection)"
             
         return is_key_frame, reason
@@ -877,7 +795,7 @@ class ScreenshotExtractor:
                 self.audio_chunks,
                 self.recognizer,
                 trigger_keywords,
-                self.use_ai_speech_analysis and OPENAI_AVAILABLE and client is not None
+                self.use_ai_speech_analysis and OPENAI_AVAILABLE  # OPENAI_AVAILABLE is alias for GEMINI_AVAILABLE
             )
             
             # Store the results
@@ -939,74 +857,20 @@ class ScreenshotExtractor:
                                 text = result.get('text', '').strip()
                                 logging.debug("Chunk %d/%d: Recognized speech with Azure AI Speech (%s)", chunk_index+1, len(self.audio_chunks), language)
                             else:
-                                raise Exception("Azure AI Speech not available")
+                                raise RuntimeError("Azure AI Speech not available")
                                 
                         except Exception as azure_speech_err:
                             logging.warning("Azure AI Speech failed for chunk %d: %s", chunk_index+1, azure_speech_err)
                             
-                            # Fallback to Azure OpenAI Whisper
-                            try:
-                                from ..audio.azure_whisper_client import get_azure_whisper_client
-                                from pydub import AudioSegment
-                                
-                                # Convert SpeechRecognition audio data to AudioSegment
-                                audio_bytes = audio_data.get_raw_data()
-                                audio_segment = AudioSegment(
-                                    data=audio_bytes,
-                                    sample_width=2,  # 16-bit
-                                    frame_rate=16000,  # 16kHz
-                                    channels=1  # Mono
-                                )
-                                
-                                # Use Azure OpenAI Whisper directly
-                                azure_client = get_azure_whisper_client()
-                                if azure_client.is_available():
-                                    result = azure_client.transcribe_audio_segment(audio_segment)
-                                    text = result.get('text', '').strip()
-                                    logging.debug("Chunk %d/%d: Recognized speech with %s Whisper", chunk_index+1, len(self.audio_chunks), azure_client.service_type)
-                                else:
-                                    raise Exception("Azure OpenAI Whisper not available")
-                                    
-                            except Exception as whisper_service_err:
-                                logging.debug("Azure OpenAI Whisper failed for chunk %d: %s", chunk_index+1, whisper_service_err)
-                            
+                            # Note: Azure OpenAI Whisper fallback removed
                             # Fallback to Google Speech Recognition
                             try:
                                 text = self.recognizer.recognize_google(audio_data)
                                 logging.debug("Chunk %d/%d: Recognized speech with Google (fallback)", chunk_index+1, len(self.audio_chunks))
                             except (sr.RequestError, AttributeError, Exception) as e:
                                 logging.debug("Google speech recognition failed for chunk %d: %s", chunk_index+1, e)
-                                
-                                # Final fallback to OpenAI Whisper API if available
-                                if OPENAI_AVAILABLE and client is not None:
-                                    try:
-                                        # Export the audio data to a temporary file
-                                        temp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-                                        temp_file.close()
-                                        
-                                        # Use Python's wave to write the audio data
-                                        import wave
-                                        with wave.open(temp_file.name, 'wb') as wf:
-                                            wf.setnchannels(1)  # Mono
-                                            wf.setsampwidth(2)  # 16-bit
-                                            wf.setframerate(16000)  # 16kHz
-                                            wf.writeframes(audio_data.get_raw_data())
-                                        
-                                        # Use our Whisper API utility function
-                                        from ...utils.media_utils import transcribe_with_whisper
-                                        
-                                        # This will always use standard OpenAI for Whisper transcription
-                                        text = transcribe_with_whisper(temp_file.name)
-                                        logging.debug("Chunk %d/%d: Recognized speech with Whisper API (final fallback)", chunk_index+1, len(self.audio_chunks))
-                                        
-                                        # Clean up temp file
-                                        try:
-                                            os.unlink(temp_file.name)
-                                        except:
-                                            pass
-                                            
-                                    except Exception as whisper_err:
-                                        logging.warning("All speech recognition methods failed for chunk %d: %s", chunk_index+1, whisper_err)
+                                # Note: OpenAI Whisper API fallback removed - using local Whisper, Azure Speech, or Google only
+                                text = ""  # Set text to empty if all methods failed
                         
                         if text:
                             # Store all transcribed speech
@@ -1090,7 +954,7 @@ class ScreenshotExtractor:
             list: List of timestamps where major scene changes were detected
         """
         # Reset the video processor to start from the beginning
-        scene_change_timestamps = []
+        # Note: scene_change_timestamps is stored in self.scene_change_timestamps
         
         # For very long videos (>10k frames), use a more aggressive sampling
         if frame_count > 10000:
@@ -1191,10 +1055,6 @@ class ScreenshotExtractor:
         
         start_time = time.time()
         
-        # Track status for debugging
-        phase1_complete = False
-        phase2_started = False
-        
         # Use parallel processing if enabled
         if self.parallel_processing:
             logging.info("Using TRUE PARALLEL processing for video chunks")
@@ -1208,14 +1068,14 @@ class ScreenshotExtractor:
             try:
                 # Run speech processing first
                 logging.info("Starting speech processing...")
-                speech_results = self.extract_all_speech_keywords()
+                self.extract_all_speech_keywords()
                 logging.info("Speech processing complete")
                 
                 # Run scene detection based on the UI setting
                 # The 'use_ssim' property is set from app.py's checkbox
                 if self.detection_mode=='advanced':
                     logging.info("Starting scene detection with structural similarity...")
-                    scene_results = self.detect_scene_changes_fast(
+                    self.detect_scene_changes_fast(
                         video_processor, fps, frame_count,
                         lambda p, m: progress_callback(0.1 + p * 0.2, m) if progress_callback else None
                     )
@@ -1224,8 +1084,6 @@ class ScreenshotExtractor:
                     logging.info("Scene detection skipped (disabled in settings)")
                     self.scene_change_timestamps = []  # Clear any existing scene changes
                 
-                # Mark Phase 1 as complete
-                phase1_complete = True
                 logging.info("Phase 1 complete - all detection methods finished")
             except Exception as e:
                 logging.error("ERROR in Phase 1: %s", e)
@@ -1238,7 +1096,6 @@ class ScreenshotExtractor:
             # Phase 2: Process video in parallel chunks using our parallel processor
             try:
                 logging.info("\n===== PHASE 2: SCREENSHOT GENERATION =====")
-                phase2_started = True
                 logging.info("Phase 2 starting - preparing to generate screenshots")
                 
                 # Print debug information about what we have so far
@@ -1534,7 +1391,7 @@ class ScreenshotExtractor:
         
         # Phase 2: Process only frames at key timestamps
         if progress_callback:
-            progress_callback(0.5, f"Processing...")
+            progress_callback(0.5, "Processing...")
             
         # Always use the comprehensive window-based processing method
         # to ensure we capture the best frames at each timestamp
@@ -1542,7 +1399,7 @@ class ScreenshotExtractor:
         for i, (timestamp, reason) in enumerate(self.key_timestamps):
             if progress_callback:
                 progress_callback(0.5 + (i / len(self.key_timestamps)) * 0.5, 
-                               f"Processing timestamp {i+1}/{len(self.key_timestamps)}: {timestamp:.2f}s")
+                               "Processing timestamp {}/{}: {:.2f}s".format(i+1, len(self.key_timestamps), timestamp))
             
             # Convert timestamp to frame number
             center_frame_number = int(timestamp * fps)
@@ -1648,5 +1505,5 @@ class ScreenshotExtractor:
         if self.temp_audio_file and os.path.exists(self.temp_audio_file):
             try:
                 os.unlink(self.temp_audio_file)
-            except:
+            except OSError:
                 pass

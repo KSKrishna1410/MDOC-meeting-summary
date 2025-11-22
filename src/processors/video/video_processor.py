@@ -42,7 +42,6 @@ class VideoProcessor:
             if not ret:
                 break
                 
-            # Convert BGR to RGB (Streamlit/PIL uses RGB)
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             yield frame_rgb, frame_number
             frame_number += 1
