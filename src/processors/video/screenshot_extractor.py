@@ -932,9 +932,9 @@ class ScreenshotExtractor:
                             # Use Azure AI Speech directly with language setting
                             azure_speech_client = get_azure_speech_client()
                             if azure_speech_client.is_available():
-                                # Get language from session state if available
-                                import streamlit as st
-                                language = getattr(st.session_state, 'speech_language', 'en-IN')
+                                # Get language from environment variable or use default
+                                import os
+                                language = os.getenv('SPEECH_LANGUAGE', 'en-IN')
                                 result = azure_speech_client.transcribe_audio_segment(audio_segment, language)
                                 text = result.get('text', '').strip()
                                 logging.debug("Chunk %d/%d: Recognized speech with Azure AI Speech (%s)", chunk_index+1, len(self.audio_chunks), language)

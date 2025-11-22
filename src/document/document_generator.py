@@ -38,8 +38,6 @@ import logging
 from docx.shared import Inches
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.oxml.shared import OxmlElement, qn
-import streamlit as st
-
 import logging
 # For OpenAI integration
 import json
@@ -1997,16 +1995,9 @@ class DocumentGenerator:
         # Use the speech segments provided during initialization
         speech_segments = self.speech_segments.copy()
         
-        # If no speech segments were provided, try to extract them from session state
+        # If no speech segments were provided, log a warning
         if not speech_segments:
-            try:
-                # Access all speech segments from the app's session state
-                import streamlit as st
-                if 'speech_timestamps' in st.session_state and st.session_state.speech_timestamps:
-                    logging.info(f"Found {len(st.session_state.speech_timestamps)} speech segments in session state")
-                    speech_segments = st.session_state.speech_timestamps
-            except Exception as e:
-                logging.info(f"Error accessing session state: {e}")
+            logging.warning("No speech segments provided to document generator")
         
         # If still no speech segments, try to extract from screenshot reasons
         if not speech_segments:

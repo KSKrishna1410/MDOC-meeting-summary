@@ -4,7 +4,6 @@ from datetime import datetime
 import os
 import pandas as pd
 from dotenv import load_dotenv
-import streamlit as st
 
 load_dotenv()
 
@@ -49,15 +48,10 @@ class Logger:
         print("Container_Name", os.getenv("CONTAINER_NAME"))
 
     def get_user_info(self):
-        headers = st.context.headers
-        if "X-Ms-Client-Principal-Name" in headers:
-            user_name = headers["X-Ms-Client-Principal-Name"]
-        else:
-            user_name= 'user'
-        if "X-Ms-Client-Principal-Email" in headers:
-            user_email = headers["X-Ms-Client-Principal-Email"]
-        else:
-            user_email = 'email'
+        # For API mode, get user info from environment variables or use defaults
+        # This can be extended to get from request headers in API context
+        user_name = os.getenv("USER_NAME", "api_user")
+        user_email = os.getenv("USER_EMAIL", "api@example.com")
         return {
             "name": user_name,
             "email": user_email
