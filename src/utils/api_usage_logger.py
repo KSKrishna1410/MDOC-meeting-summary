@@ -27,11 +27,12 @@ def _resolve_session_id(explicit_session_id: Optional[str] = None) -> str:
 
 def log_openai_usage(module_name: str, model: str, prompt_tokens: int, completion_tokens: int, function_name: str = "", session_id: Optional[str] = None):
     """
-    Log OpenAI API usage using the existing logger configuration.
+    Log Gemini API usage via LiteLLM using the existing logger configuration.
+    Function name kept as log_openai_usage for backward compatibility.
     
     Args:
         module_name: Name of the module/script using the API
-        model: Model name used
+        model: Model name used (e.g., "gemini/gemini-1.5-pro")
         prompt_tokens: Number of prompt tokens
         completion_tokens: Number of completion tokens  
         function_name: Specific function that made the call
@@ -39,7 +40,7 @@ def log_openai_usage(module_name: str, model: str, prompt_tokens: int, completio
     total_tokens = prompt_tokens + completion_tokens
     entry = {
         "timestamp": datetime.utcnow().isoformat(),
-        "service": "openai",
+        "service": "gemini",  # Changed from "openai" to "gemini"
         "session_id": _resolve_session_id(session_id),
         "module": module_name,
         "function": function_name,
@@ -50,8 +51,9 @@ def log_openai_usage(module_name: str, model: str, prompt_tokens: int, completio
     }
     
     # Use existing logger instead of creating new log file
+    # Keep OPENAI_USAGE prefix for backward compatibility with log parsing
     usage_logger.info(f"OPENAI_USAGE: {json.dumps(entry)}")
-    _update_aggregate("openai", module_name, function_name, total_tokens)
+    _update_aggregate("gemini", module_name, function_name, total_tokens)  # Changed from "openai" to "gemini"
 
 def log_whisper_usage(module_name: str, model: str, duration_seconds: float, function_name: str = "", file_size_mb: Optional[float] = None):
     """
@@ -97,7 +99,7 @@ def _update_aggregate(service: str, module_name: str, function_name: str, usage:
                 aggregate = json.load(f)
         else:
             aggregate = {
-                "openai": {"total": 0, "by_module": {}, "by_function": {}},
+                "gemini": {"total": 0, "by_module": {}, "by_function": {}},  # Changed from "openai" to "gemini"
                 "whisper": {"total": 0, "by_module": {}, "by_function": {}}
             }
 
@@ -135,14 +137,14 @@ def get_usage_summary():
         dict: Usage summary data
     """
     if not os.path.exists(AGGREGATE_FILE):
-        return {"openai": {"total": 0}, "whisper": {"total": 0}}
+        return {"gemini": {"total": 0}, "whisper": {"total": 0}}  # Changed from "openai" to "gemini"
     
     try:
         with open(AGGREGATE_FILE, "r") as f:
             return json.load(f)
     except Exception as e:
         usage_logger.error(f"Error reading usage summary: {e}")
-        return {"openai": {"total": 0}, "whisper": {"total": 0}}
+        return {"gemini": {"total": 0}, "whisper": {"total": 0}}  # Changed from "openai" to "gemini"
 
 def print_usage_report():
     """Print a formatted usage report."""
@@ -152,22 +154,22 @@ def print_usage_report():
     print("API USAGE REPORT")
     print("n="*50)
     
-    # OpenAI Usage
-    if "openai" in summary and summary["openai"]["total"] > 0:
-        print(f"\n🤖 OpenAI Usage:")
-        print(f"   Total Tokens: {summary['openai']['total']:,}")
+    # Gemini Usage (previously OpenAI)
+    if "gemini" in summary and summary["gemini"]["total"] > 0:
+        print(f"\n🤖 Gemini Usage:")
+        print(f"   Total Tokens: {summary['gemini']['total']:,}")
         
-        if "by_module" in summary["openai"]:
+        if "by_module" in summary["gemini"]:
             print(f"   By Module:")
-            for module, tokens in summary["openai"]["by_module"].items():
+            for module, tokens in summary["gemini"]["by_module"].items():
                 print(f"     {module}: {tokens:,} tokens")
         
-        if "by_function" in summary["openai"]:
+        if "by_function" in summary["gemini"]:
             print(f"   By Function:")
-            for func, tokens in summary["openai"]["by_function"].items():
+            for func, tokens in summary["gemini"]["by_function"].items():
                 print(f"     {func}: {tokens:,} tokens")
     else:
-        print(f"\n🤖 OpenAI Usage: No usage recorded")
+        print(f"\n🤖 Gemini Usage: No usage recorded")
     
     # Whisper Usage  
     if "whisper" in summary and summary["whisper"]["total"] > 0:
@@ -244,7 +246,7 @@ def rebuild_aggregate_from_app_log(log_file_path: str = "app.log"):
     
     # Reset aggregate
     aggregate = {
-        "openai": {"total": 0, "by_module": {}, "by_function": {}},
+        "gemini": {"total": 0, "by_module": {}, "by_function": {}},  # Changed from "openai" to "gemini"
         "whisper": {"total": 0, "by_module": {}, "by_function": {}}
     }
     
@@ -254,7 +256,11 @@ def rebuild_aggregate_from_app_log(log_file_path: str = "app.log"):
         module_name = entry.get("module", "unknown")
         function_name = entry.get("function", "")
         
+        # Map old "openai" service to "gemini" for backward compatibility
         if service == "openai":
+            service = "gemini"
+        
+        if service == "gemini":
             # prompt_tokens = entry.get("prompt_tokens", 0)
             # completion_tokens = entry.get("completion_tokens", 0)
             usage = entry.get("total_tokens", 0)
@@ -285,7 +291,7 @@ def rebuild_aggregate_from_app_log(log_file_path: str = "app.log"):
         with open(AGGREGATE_FILE, "w") as f:
             json.dump(aggregate, f, indent=2)
         usage_logger.info(f"Rebuilt aggregate with {len(entries)} entries")
-        usage_logger.info(f"OpenAI total: {aggregate['openai']['total']} tokens")
+        usage_logger.info(f"Gemini total: {aggregate['gemini']['total']} tokens")  # Changed from "OpenAI" to "Gemini"
         usage_logger.info(f"Whisper total: {aggregate['whisper']['total']:.2f} minutes")
     except Exception as e:
         usage_logger.error(f"Error saving rebuilt aggregate: {e}")

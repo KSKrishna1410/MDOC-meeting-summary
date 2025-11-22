@@ -1,14 +1,11 @@
 """
-Configuration module for OpenAI and Azure OpenAI APIs
-This module handles both standard OpenAI and Azure OpenAI authentication
+Configuration module for Gemini API via LiteLLM
+This module handles Gemini authentication and model configuration
 """
 
 import os
 from typing import Optional
-from openai import OpenAI, AzureOpenAI
-
 from dotenv import load_dotenv
-import os
 import logging
 
 from .logger_config import setup_logger
@@ -32,82 +29,52 @@ if key_vault_url:
         vault_client = SecretClient(vault_url=key_vault_url, credential=credential)
         
         # Environment variables from Key Vault
-        OPENAI_API_KEY = vault_client.get_secret("OPENAI-API-KEY").value
-        AZURE_OPENAI_API_KEY = vault_client.get_secret("OPENAI-API-KEY").value
-        AZURE_OPENAI_ENDPOINT = vault_client.get_secret("OPENAI-API-ENDPOINT").value
-        AZURE_OPENAI_API_VERSION = vault_client.get_secret("OPENAI-API-VERSION").value
-        AZURE_GPT_DEPLOYMENT_NAME = vault_client.get_secret("GPT-DEPLOYMENT-NAME").value
+        GEMINI_API_KEY = vault_client.get_secret("GEMINI-API-KEY").value
     except Exception as e:
         logging.warning(f"Key Vault access failed, falling back to environment variables: {e}")
         # Fall back to environment variables
-        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-        AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY", "")
-        AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-        AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
-        AZURE_GPT_DEPLOYMENT_NAME = os.getenv("AZURE_GPT_DEPLOYMENT_NAME", "")
+        GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 else:
     # Use environment variables directly (bypass Key Vault)
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-    AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY", "")
-    AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-    AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
-    AZURE_GPT_DEPLOYMENT_NAME = os.getenv("AZURE_GPT_DEPLOYMENT_NAME", "") 
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-# Provide Litellm-compatible environment variable aliases so both naming schemes work
-if AZURE_OPENAI_API_KEY and not os.getenv("AZURE_API_KEY"):
-    os.environ["AZURE_API_KEY"] = AZURE_OPENAI_API_KEY
-if AZURE_OPENAI_ENDPOINT and not os.getenv("AZURE_API_BASE"):
-    os.environ["AZURE_API_BASE"] = AZURE_OPENAI_ENDPOINT
-if AZURE_OPENAI_API_VERSION and not os.getenv("AZURE_API_VERSION"):
-    os.environ["AZURE_API_VERSION"] = AZURE_OPENAI_API_VERSION
-if AZURE_GPT_DEPLOYMENT_NAME and not os.getenv("AZURE_API_DEPLOYMENT_NAME"):
-    os.environ["AZURE_API_DEPLOYMENT_NAME"] = AZURE_GPT_DEPLOYMENT_NAME
+# Set LiteLLM-compatible environment variable for Gemini
+if GEMINI_API_KEY and not os.getenv("GEMINI_API_KEY"):
+    os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 
-# Check if Azure OpenAI or regular OpenAI should be used
-USE_AZURE = AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY and AZURE_GPT_DEPLOYMENT_NAME
+# Default Gemini model name
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini/gemini-1.5-pro")
 
-# Check if API keys are available
-OPENAI_AVAILABLE = (USE_AZURE and AZURE_OPENAI_API_KEY) or (not USE_AZURE and OPENAI_API_KEY)
+# Check if API key is available
+GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
 
-def get_openai_client() -> Optional[OpenAI | AzureOpenAI]:
+# For backward compatibility, keep OPENAI_AVAILABLE as alias
+OPENAI_AVAILABLE = GEMINI_AVAILABLE
+USE_AZURE = False  # No longer using Azure
+
+# Legacy variables for backward compatibility (set to empty/None)
+OPENAI_API_KEY = ""
+AZURE_OPENAI_API_KEY = ""
+AZURE_OPENAI_ENDPOINT = ""
+AZURE_OPENAI_API_VERSION = ""
+AZURE_GPT_DEPLOYMENT_NAME = ""
+
+def get_openai_client() -> Optional[None]:
     """
-    Get the appropriate OpenAI client based on available credentials.
-    Will try Azure OpenAI first, then fall back to standard OpenAI.
+    Legacy function for backward compatibility.
+    Returns None as we no longer use OpenAI clients directly.
+    All LLM calls should go through LiteLLM with Gemini.
     
     Returns:
-        OpenAI or AzureOpenAI client, or None if no credentials are available
+        None (kept for backward compatibility)
     """
-    # Check for Azure OpenAI credentials
-    if USE_AZURE:
-        try:
-            logging.info(f"Initializing Azure OpenAI client with endpoint: {AZURE_OPENAI_ENDPOINT}")
-            client = AzureOpenAI(
-                api_key=AZURE_OPENAI_API_KEY,
-                api_version=AZURE_OPENAI_API_VERSION,
-                azure_endpoint=AZURE_OPENAI_ENDPOINT
-            )
-            return client
-        except Exception as e:
-            logging.exception(f"Failed to initialize Azure OpenAI client: {e}")
-    
-    # Fall back to standard OpenAI
-    if OPENAI_API_KEY:
-        try:
-            client = OpenAI(api_key=OPENAI_API_KEY)
-            return client
-        except Exception as e:
-            logging.exception(f"Failed to initialize standard OpenAI client: {e}")
-    
     return None
 
 def get_chat_model_name() -> str:
     """
-    Get the appropriate model name/deployment for chat completions
+    Get the Gemini model name for chat completions via LiteLLM
     
     Returns:
-        Model name for standard OpenAI or deployment name for Azure OpenAI
+        Model name for Gemini (e.g., "gemini/gemini-1.5-pro")
     """
-    if USE_AZURE:
-        return AZURE_GPT_DEPLOYMENT_NAME
-    else:
-        return "gpt-4o"  # Default to gpt-4o for standard OpenAI
+    return DEFAULT_GEMINI_MODEL
