@@ -18,5 +18,5 @@ curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
 sudo apt-get install -y nodejs
 sudo npm install -g @mermaid-js/mermaid-cli
 
-# Start your Streamlit app
-streamlit run app.py --server.port 8000 --server.address 0.0.0.0
+# Start your FastAPI app
+uvicorn api:app --host 0.0.0.0 --port 8000

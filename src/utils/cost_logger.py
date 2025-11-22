@@ -4,7 +4,6 @@ from datetime import datetime
 import os
 import pandas as pd
 from dotenv import load_dotenv
-import streamlit as st
 
 load_dotenv()
 
@@ -58,9 +57,10 @@ class UsageCostLogger:
         os.makedirs(self.LOCAL_STORAGE_DIR, exist_ok=True)
 
     def get_user_info(self):
-        headers = st.context.headers
-        user_name = headers.get("X-Ms-Client-Principal-Name", "user")
-        user_email = headers.get("X-Ms-Client-Principal-Email", "email")
+        # For API mode, get user info from environment variables or use defaults
+        # This can be extended to get from request headers in API context
+        user_name = os.getenv("USER_NAME", "api_user")
+        user_email = os.getenv("USER_EMAIL", "api@example.com")
         return {"name": user_name, "email": user_email}
 
     def load_csv_from_local(self):
